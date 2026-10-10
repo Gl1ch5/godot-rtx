@@ -1787,6 +1787,11 @@ void RenderForwardClustered::_render_scene(RenderDataRD *p_render_data, const Co
 
 	ERR_FAIL_NULL(p_render_data);
 
+	if (raytracing_enabled && p_render_data->instances) {
+		// Acceleration structures must be built outside of any draw or compute list, so do it before rendering starts.
+		rt_scene.update(*p_render_data->instances);
+	}
+
 	Ref<RenderSceneBuffersRD> rb = p_render_data->render_buffers;
 	ERR_FAIL_COND(rb.is_null());
 	Ref<RenderBufferDataForwardClustered> rb_data;
@@ -5217,6 +5222,7 @@ void RenderForwardClustered::_update_shader_quality_settings() {
 }
 
 RenderForwardClustered::RenderForwardClustered() {
+	raytracing_enabled = RendererRD::RTScene::is_supported();
 	singleton = this;
 
 	/* SCENE SHADER */
@@ -5379,6 +5385,8 @@ RenderForwardClustered::RenderForwardClustered() {
 }
 
 RenderForwardClustered::~RenderForwardClustered() {
+	rt_scene.finalize();
+
 	if (ss_effects != nullptr) {
 		memdelete(ss_effects);
 		ss_effects = nullptr;

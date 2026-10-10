@@ -30,6 +30,7 @@
 
 #include "mesh_storage.h"
 
+#include "servers/rendering/renderer_rd/raytracing/rt_scene.h"
 #include "servers/rendering/renderer_viewport.h"
 #include "servers/rendering/rendering_server.h"
 #include "servers/rendering/rendering_server_types.h"
@@ -44,6 +45,8 @@ MeshStorage *MeshStorage::get_singleton() {
 
 MeshStorage::MeshStorage() {
 	singleton = this;
+
+	raytracing_buffers = RTScene::is_supported();
 
 	default_rd_storage_buffer = RD::get_singleton()->storage_buffer_create(sizeof(uint32_t) * 4);
 
@@ -378,6 +381,7 @@ void MeshStorage::mesh_add_surface(RID p_mesh, const RenderingServerTypes::Surfa
 	const bool requested_storage_buffer = (new_surface.format & RSE::ARRAY_FLAG_USE_STORAGE_BUFFER);
 	const BitField<RD::BufferCreationBits> as_storage_flag = (use_as_storage || requested_storage_buffer) ? RD::BUFFER_CREATION_AS_STORAGE_BIT : 0;
 	const BitField<RD::BufferCreationBits> requested_storage_flag = requested_storage_buffer ? RD::BUFFER_CREATION_AS_STORAGE_BIT : 0;
+	const BitField<RD::BufferCreationBits> rt_build_input_flag = raytracing_buffers ? RD::BUFFER_CREATION_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT : 0;
 
 	if (new_surface.vertex_data.size()) {
 		// If we have an uncompressed surface that contains normals, but not tangents, we need to differentiate the array
@@ -391,10 +395,10 @@ void MeshStorage::mesh_add_surface(RID p_mesh, const RenderingServerTypes::Surfa
 			Vector<uint8_t> new_vertex_data;
 			new_vertex_data.resize_initialized(new_surface.vertex_data.size() + sizeof(uint16_t) * 2);
 			memcpy(new_vertex_data.ptrw(), new_surface.vertex_data.ptr(), new_surface.vertex_data.size());
-			s->vertex_buffer = RD::get_singleton()->vertex_buffer_create(new_vertex_data.size(), new_vertex_data, as_storage_flag);
+			s->vertex_buffer = RD::get_singleton()->vertex_buffer_create(new_vertex_data.size(), new_vertex_data, as_storage_flag | rt_build_input_flag);
 			s->vertex_buffer_size = new_vertex_data.size();
 		} else {
-			s->vertex_buffer = RD::get_singleton()->vertex_buffer_create(new_surface.vertex_data.size(), new_surface.vertex_data, as_storage_flag);
+			s->vertex_buffer = RD::get_singleton()->vertex_buffer_create(new_surface.vertex_data.size(), new_surface.vertex_data, as_storage_flag | rt_build_input_flag);
 			s->vertex_buffer_size = new_surface.vertex_data.size();
 		}
 	}
@@ -417,7 +421,7 @@ void MeshStorage::mesh_add_surface(RID p_mesh, const RenderingServerTypes::Surfa
 	if (new_surface.index_count) {
 		bool is_index_16 = new_surface.vertex_count <= 65536 && new_surface.vertex_count > 0;
 
-		s->index_buffer = RD::get_singleton()->index_buffer_create(new_surface.index_count, is_index_16 ? RD::INDEX_BUFFER_FORMAT_UINT16 : RD::INDEX_BUFFER_FORMAT_UINT32, new_surface.index_data, false, requested_storage_flag);
+		s->index_buffer = RD::get_singleton()->index_buffer_create(new_surface.index_count, is_index_16 ? RD::INDEX_BUFFER_FORMAT_UINT16 : RD::INDEX_BUFFER_FORMAT_UINT32, new_surface.index_data, false, requested_storage_flag | rt_build_input_flag);
 		s->index_buffer_size = new_surface.index_data.size();
 		s->index_count = new_surface.index_count;
 		s->index_array = RD::get_singleton()->index_array_create(s->index_buffer, 0, s->index_count);

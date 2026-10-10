@@ -38,6 +38,7 @@
 #include "servers/rendering/renderer_rd/effects/ss_effects.h"
 #include "servers/rendering/renderer_rd/effects/taa.h"
 #include "servers/rendering/renderer_rd/forward_clustered/scene_shader_forward_clustered.h"
+#include "servers/rendering/renderer_rd/raytracing/rt_scene.h"
 #include "servers/rendering/renderer_rd/renderer_scene_render_rd.h"
 #include "servers/rendering/renderer_rd/shaders/forward_clustered/best_fit_normal.glsl.gen.h"
 #include "servers/rendering/renderer_rd/shaders/forward_clustered/integrate_dfg.glsl.gen.h"
@@ -764,6 +765,10 @@ private:
 	RendererRD::TAA *taa = nullptr;
 	RendererRD::FSR2Effect *fsr2_effect = nullptr;
 	RendererRD::SSEffects *ss_effects = nullptr;
+
+	// Hardware ray tracing acceleration structures. Only used when ray tracing is enabled in the project settings.
+	bool raytracing_enabled = false;
+	RendererRD::RTScene rt_scene;
 
 #ifdef METAL_MFXTEMPORAL_ENABLED
 	RendererRD::MFXTemporalEffect *mfx_temporal_effect = nullptr;

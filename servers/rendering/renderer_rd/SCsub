@@ -6,6 +6,7 @@ Import("env")
 env.add_source_files(env.servers_sources, "*.cpp")
 
 SConscript("effects/SCsub")
+SConscript("raytracing/SCsub")
 SConscript("environment/SCsub")
 SConscript("storage_rd/SCsub")
 if env["forward_plus_renderer"]:

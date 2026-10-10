@@ -68,6 +68,9 @@ private:
 
 	RID default_rd_storage_buffer;
 
+	// When set, vertex and index buffers are created as acceleration structure build inputs.
+	bool raytracing_buffers = false;
+
 	/* Mesh */
 
 	RID mesh_default_rd_buffers[DEFAULT_RD_BUFFER_MAX];
