@@ -1511,6 +1511,23 @@ void RenderForwardClustered::_process_ssil(Ref<RenderSceneBuffersRD> p_render_bu
 	Transform3D transform = p_transform;
 	transform.set_origin(Vector3(0.0, 0.0, 0.0));
 
+	// Ray traced GI replaces the screen-space pass when a TLAS is available. Only single-view rendering is handled for now.
+	if (raytracing_enabled && rt_scene.get_instance_count() > 0 && p_render_buffers->get_view_count() == 1) {
+		if (!p_render_buffers->has_texture(RB_SCOPE_SSIL, RB_FINAL)) {
+			p_render_buffers->create_texture(RB_SCOPE_SSIL, RB_FINAL, RD::DATA_FORMAT_R16G16B16A16_SFLOAT, RD::TEXTURE_USAGE_SAMPLING_BIT | RD::TEXTURE_USAGE_STORAGE_BIT, RD::TEXTURE_SAMPLES_1, p_render_buffers->get_internal_size(), 1);
+		}
+		Projection correction;
+		correction.set_depth_correction(true);
+		const Projection view_projection = (correction * p_projections[0]) * Projection(p_transform.affine_inverse());
+		const Projection prev_view_projection = rt_gi_last_view_projection;
+		rt_gi_last_view_projection = view_projection;
+		RendererRD::RTGI::Settings rt_settings;
+		rt_settings.max_distance = 20.0;
+		rt_settings.intensity = settings.intensity;
+		rt_gi.generate(p_render_buffers, 0, rt_scene.get_tlas(), p_normal_buffers[0], view_projection.inverse(), prev_view_projection, p_transform, rt_settings, rt_frame);
+		return;
+	}
+
 	for (uint32_t v = 0; v < p_render_buffers->get_view_count(); v++) {
 		Projection correction;
 		correction.set_depth_correction(true);
@@ -5259,6 +5276,7 @@ RenderForwardClustered::RenderForwardClustered() {
 	if (raytracing_enabled) {
 		rt_ao.initialize();
 		rt_reflection.initialize();
+		rt_gi.initialize();
 	}
 	singleton = this;
 
@@ -5425,6 +5443,7 @@ RenderForwardClustered::~RenderForwardClustered() {
 	rt_scene.finalize();
 	rt_ao.finalize();
 	rt_reflection.finalize();
+	rt_gi.finalize();
 
 	if (ss_effects != nullptr) {
 		memdelete(ss_effects);
