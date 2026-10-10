@@ -770,7 +770,7 @@ uint32_t RenderForwardClustered::_setup_environment(const RenderDataRD *p_render
 			ss_flags |= environment_get_ssao_enabled(p_render_data->environment) ? SCREEN_SPACE_EFFECTS_FLAGS_USE_SSAO : 0;
 			ss_flags |= environment_get_ssil_enabled(p_render_data->environment) ? SCREEN_SPACE_EFFECTS_FLAGS_USE_SSIL : 0;
 			ss_flags |= environment_get_ssr_enabled(p_render_data->environment) ? SCREEN_SPACE_EFFECTS_FLAGS_USE_SSR : 0;
-			ss_flags |= bool(GLOBAL_GET_CACHED(bool, "rendering/lights_and_shadows/contact_shadow/enabled")) ? SCREEN_SPACE_EFFECTS_FLAGS_USE_SSCS : 0;
+			ss_flags |= (bool(GLOBAL_GET_CACHED(bool, "rendering/lights_and_shadows/contact_shadow/enabled")) || raytracing_enabled) ? SCREEN_SPACE_EFFECTS_FLAGS_USE_SSCS : 0;
 
 			if (rd.is_valid()) {
 				Ref<RenderBufferDataForwardClustered> rb_data;
@@ -1586,7 +1586,7 @@ void RenderForwardClustered::_process_ssr(Ref<RenderSceneBuffersRD> p_render_buf
 	ss_effects->screen_space_reflection(p_render_buffers, rb_data->ss_effects_data.ssr, p_normal_slices, environment_get_ssr_max_steps(p_environment), environment_get_ssr_fade_in(p_environment), environment_get_ssr_fade_out(p_environment), environment_get_ssr_depth_tolerance(p_environment), p_projections, reprojections, p_eye_offsets, *copy_effects);
 }
 
-void RenderForwardClustered::_process_sscs(Ref<RenderSceneBuffersRD> p_render_buffers, const Projection *p_projections, const Transform3D &p_transform, const LocalVector<int> &p_contact_shadows, const RenderShadowData *p_render_shadows, const float p_taa_frame_count) {
+void RenderForwardClustered::_process_sscs(Ref<RenderSceneBuffersRD> p_render_buffers, const RID *p_normal_roughness_slices, const Projection *p_projections, const Transform3D &p_transform, const LocalVector<int> &p_contact_shadows, const RenderShadowData *p_render_shadows, const float p_taa_frame_count) {
 	ERR_FAIL_NULL(ss_effects);
 	ERR_FAIL_COND(p_render_buffers.is_null());
 
@@ -1605,14 +1605,32 @@ void RenderForwardClustered::_process_sscs(Ref<RenderSceneBuffersRD> p_render_bu
 
 	ss_effects->sscs_allocate_buffers(p_render_buffers, rb_data->ss_effects_data.sscs, p_contact_shadows.size());
 
+	const bool use_rt = raytracing_enabled && rt_scene.get_instance_count() > 0 && p_render_buffers->get_view_count() == 1;
+	Projection correction;
+	correction.set_depth_correction(true);
+	const Projection inv_view_projection = ((correction * p_projections[0]) * Projection(p_transform.affine_inverse())).inverse();
+
 	for (uint32_t i = 0; i < p_contact_shadows.size(); i++) {
 		RID light_instance = p_render_shadows[p_contact_shadows[i]].light;
 		RID base = light_storage->light_instance_get_base_light(light_instance);
-		if (!light_storage->light_get_allow_contact_shadows(base)) {
+		Transform3D light_transform = light_storage->light_instance_get_base_transform(light_instance);
+
+		if (use_rt) {
+			// Ray traced shadow. Angular size is stored as a diameter in degrees, so the tangent of the radius gives the cone.
+			float light_size = light_storage->light_get_param(base, RSE::LIGHT_PARAM_SIZE);
+			float tan_radius = Math::tan(Math::deg_to_rad(light_size * 0.5f));
+			RID visibility = p_render_buffers->get_texture_slice(RB_SCOPE_SSCS, RB_SSCS, i, 0);
+			rt_shadow.generate(visibility, rt_scene.get_tlas(), p_normal_roughness_slices[0], p_render_buffers->get_depth_texture(0), inv_view_projection, p_transform, light_transform.basis.get_column(2), tan_radius, rt_frame);
 			continue;
 		}
 
-		Transform3D light_transform = light_storage->light_instance_get_base_transform(light_instance);
+		if (!light_storage->light_get_allow_contact_shadows(base)) {
+			// Ray traced lights without a usable RT path leave the shadow map as the only shadow, so the buffer is cleared to fully lit.
+			RID visibility = p_render_buffers->get_texture_slice(RB_SCOPE_SSCS, RB_SSCS, i, 0);
+			RD::get_singleton()->texture_clear(visibility, Color(1.0, 1.0, 1.0, 1.0), 0, 1, 0, 1);
+			continue;
+		}
+
 		Vector3 light_direction = inverse_transform.basis.xform(light_transform.basis.xform(Vector3(0, 0, 1))).normalized();
 
 		float opacity = light_storage->light_get_param(base, RSE::LIGHT_PARAM_CONTACT_SHADOW_OPACITY);
@@ -1670,7 +1688,7 @@ void RenderForwardClustered::_pre_opaque_render(RenderDataRD *p_render_data, boo
 
 				if (rb_data.is_valid() && ss_effects) {
 					// Add contact shadows to be processed
-					if (p_render_data->render_shadows[i].pass == 0 && light_storage->light_get_allow_contact_shadows(base)) {
+					if (p_render_data->render_shadows[i].pass == 0 && (light_storage->light_get_allow_contact_shadows(base) || raytracing_enabled)) {
 						// Contact shadows only need one pass
 						p_render_data->contact_shadows.push_back(i);
 					}
@@ -1762,7 +1780,7 @@ void RenderForwardClustered::_pre_opaque_render(RenderDataRD *p_render_data, boo
 		}
 
 		if (p_use_sscs) {
-			_process_sscs(rb, p_render_data->scene_data->view_projection, p_render_data->scene_data->cam_transform, p_render_data->contact_shadows, p_render_data->render_shadows, p_render_data->scene_data->taa_frame_count);
+			_process_sscs(rb, p_normal_roughness_slices, p_render_data->scene_data->view_projection, p_render_data->scene_data->cam_transform, p_render_data->contact_shadows, p_render_data->render_shadows, p_render_data->scene_data->taa_frame_count);
 		}
 
 		if (p_use_ssr) {
@@ -2021,7 +2039,7 @@ void RenderForwardClustered::_render_scene(RenderDataRD *p_render_data, const Co
 			}
 		}
 
-		if (GLOBAL_GET_CACHED(bool, "rendering/lights_and_shadows/contact_shadow/enabled")) {
+		if (GLOBAL_GET_CACHED(bool, "rendering/lights_and_shadows/contact_shadow/enabled") || raytracing_enabled) {
 			using_sscs = true;
 		}
 
@@ -5276,6 +5294,7 @@ RenderForwardClustered::RenderForwardClustered() {
 	if (raytracing_enabled) {
 		rt_ao.initialize();
 		rt_reflection.initialize();
+		rt_shadow.initialize();
 		rt_gi.initialize();
 	}
 	singleton = this;
@@ -5443,6 +5462,7 @@ RenderForwardClustered::~RenderForwardClustered() {
 	rt_scene.finalize();
 	rt_ao.finalize();
 	rt_reflection.finalize();
+	rt_shadow.finalize();
 	rt_gi.finalize();
 
 	if (ss_effects != nullptr) {

@@ -31,6 +31,7 @@
 #include "light_storage.h"
 
 #include "core/config/project_settings.h"
+#include "servers/rendering/renderer_rd/raytracing/rt_scene.h"
 #include "core/math/geometry_3d.h"
 #include "core/os/os.h"
 #include "servers/rendering/renderer_rd/renderer_scene_render_rd.h"
@@ -798,7 +799,8 @@ void LightStorage::update_light_buffers(RenderDataRD *p_render_data, const Paged
 				light_data.shadow_opacity = (p_using_shadows && light->shadow)
 						? light->param[RSE::LIGHT_PARAM_SHADOW_OPACITY]
 						: 0.0;
-				light_data.sscs_index = (light->shadow && light->allow_contact_shadows)
+				// Ray traced shadows write into the same buffer, so lights without contact shadows still need a slot when ray tracing is supported.
+				light_data.sscs_index = (light->shadow && (light->allow_contact_shadows || RTScene::is_supported()))
 						? directional_contact_shadows_count++
 						: 0xffffffff;
 

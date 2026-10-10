@@ -40,6 +40,7 @@
 #include "servers/rendering/renderer_rd/forward_clustered/scene_shader_forward_clustered.h"
 #include "servers/rendering/renderer_rd/raytracing/rt_ao.h"
 #include "servers/rendering/renderer_rd/raytracing/rt_gi.h"
+#include "servers/rendering/renderer_rd/raytracing/rt_shadow.h"
 #include "servers/rendering/renderer_rd/raytracing/rt_reflection.h"
 #include "servers/rendering/renderer_rd/raytracing/rt_scene.h"
 #include "servers/rendering/renderer_rd/renderer_scene_render_rd.h"
@@ -775,6 +776,7 @@ private:
 	RendererRD::RTAO rt_ao;
 	RendererRD::RTReflection rt_reflection;
 	RendererRD::RTGI rt_gi;
+	RendererRD::RTShadow rt_shadow;
 	Projection rt_gi_last_view_projection;
 	Projection rt_last_view_projection;
 	uint32_t rt_frame = 0;
@@ -809,7 +811,7 @@ private:
 	void _process_ssao(Ref<RenderSceneBuffersRD> p_render_buffers, RID p_environment, const RID *p_normal_buffers, const Projection *p_projections, const Transform3D &p_transform);
 	void _process_ssil(Ref<RenderSceneBuffersRD> p_render_buffers, RID p_environment, const RID *p_normal_buffers, const Projection *p_projections, const Transform3D &p_transform);
 	void _process_ssr(Ref<RenderSceneBuffersRD> p_render_buffers, RID p_environment, const RID *p_normal_slices, const Projection *p_projections, const Vector3 *p_eye_offsets, const Transform3D &p_transform);
-	void _process_sscs(Ref<RenderSceneBuffersRD> p_render_buffers, const Projection *p_projections, const Transform3D &p_transform, const LocalVector<int> &p_contact_shadows, const RenderShadowData *p_render_shadows, float p_taa_frame_count);
+	void _process_sscs(Ref<RenderSceneBuffersRD> p_render_buffers, const RID *p_normal_roughness_slices, const Projection *p_projections, const Transform3D &p_transform, const LocalVector<int> &p_contact_shadows, const RenderShadowData *p_render_shadows, float p_taa_frame_count);
 	void _copy_framebuffer_to_ss_effects(Ref<RenderSceneBuffersRD> p_render_buffers, bool p_use_ssil, bool p_use_ssr);
 	void _pre_opaque_render(RenderDataRD *p_render_data, bool p_use_ssao, bool p_use_ssil, bool p_use_ssr, bool p_use_sscs, bool p_use_gi, const RID *p_normal_roughness_slices, RID p_voxel_gi_buffer);
 	void _process_sss(Ref<RenderSceneBuffersRD> p_render_buffers, const Projection &p_camera);
