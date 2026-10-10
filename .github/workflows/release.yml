@@ -1,0 +1,230 @@
+name: 🚀 Release
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing tag to build and publish (for example v4.8-rtx1).
+        required: true
+        type: string
+
+# Only one release run per tag at a time.
+concurrency:
+  group: ${{ github.workflow }}|${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  SCONS_FLAGS: >-
+    dev_mode=no
+    module_text_server_fb_enabled=yes
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+
+jobs:
+  validate:
+    name: 🔎 Validate tag
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    outputs:
+      ref: ${{ steps.tag.outputs.ref }}
+      tag: ${{ steps.tag.outputs.tag }}
+    steps:
+      - name: Resolve tag
+        id: tag
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            TAG="${{ inputs.tag }}"
+            REF="refs/tags/${TAG}"
+          else
+            TAG="${{ github.ref_name }}"
+            REF="${{ github.ref }}"
+          fi
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "ref=${REF}" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ steps.tag.outputs.ref }}
+
+      - name: Check tag matches version.py
+        shell: bash
+        run: |
+          # Version tags must start with the engine version from version.py, e.g. v4.8-rtx1 for 4.8.
+          read -r MAJOR MINOR < <(python3 -c "import runpy; v = runpy.run_path('version.py'); print(v['major'], v['minor'])")
+          TAG="${{ steps.tag.outputs.tag }}"
+          case "${TAG}" in
+            v${MAJOR}.${MINOR}|v${MAJOR}.${MINOR}.*|v${MAJOR}.${MINOR}-*) ;;
+            *)
+              echo "::error::Tag '${TAG}' does not match engine version ${MAJOR}.${MINOR} from version.py."
+              exit 1
+              ;;
+          esac
+          echo "Tag '${TAG}' matches engine version ${MAJOR}.${MINOR}."
+
+  build:
+    name: ${{ matrix.name }}
+    needs: validate
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Linux editor
+            runner: ubuntu-24.04
+            platform: linuxbsd
+            target: editor
+            scons-flags: ""
+            bin: godot.linuxbsd.editor.x86_64
+            cache-name: release-linux-editor
+            artifact: release-linux-editor
+
+          - name: Linux template (target=template_release)
+            runner: ubuntu-24.04
+            platform: linuxbsd
+            target: template_release
+            scons-flags: ""
+            bin: godot.linuxbsd.template_release.x86_64
+            cache-name: release-linux-template
+            artifact: release-linux-template
+
+          - name: Windows editor (target=editor)
+            runner: windows-latest
+            platform: windows
+            target: editor
+            scons-flags: windows_subsystem=console
+            bin: godot.windows.editor.x86_64.exe
+            cache-name: release-windows-editor
+            artifact: release-windows-editor
+
+          - name: Windows template (target=template_release)
+            runner: windows-latest
+            platform: windows
+            target: template_release
+            scons-flags: ""
+            bin: godot.windows.template_release.x86_64.console.exe
+            cache-name: release-windows-template
+            artifact: release-windows-template
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.validate.outputs.ref }}
+          submodules: recursive
+
+      - name: Restore Godot build cache
+        uses: ./.github/actions/godot-cache-restore
+        with:
+          cache-name: ${{ matrix.cache-name }}
+        continue-on-error: true
+
+      - name: Setup Python and SCons
+        uses: ./.github/actions/godot-deps
+
+      - name: Setup Linux dependencies
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwayland-bin
+
+      - name: Download pre-built AccessKit
+        shell: sh
+        id: accesskit-sdk
+        run: |
+          if python ./misc/scripts/install_accesskit.py; then
+            echo "ACCESSKIT_ENABLED=yes" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::AccessKit SDK installation failed, building without AccessKit support."
+            echo "ACCESSKIT_ENABLED=no" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Compilation
+        uses: ./.github/actions/godot-build
+        with:
+          scons-flags: ${{ env.SCONS_FLAGS }} ${{ matrix.scons-flags }} accesskit=${{ steps.accesskit-sdk.outputs.ACCESSKIT_ENABLED }}
+          platform: ${{ matrix.platform }}
+          target: ${{ matrix.target }}
+
+      - name: Save Godot build cache
+        uses: ./.github/actions/godot-cache-save
+        with:
+          cache-name: ${{ matrix.cache-name }}
+        continue-on-error: true
+
+      - name: Smoke test binary
+        shell: bash
+        run: ./bin/${{ matrix.bin }} --version
+
+      - name: Strip Linux binary
+        if: matrix.platform == 'linuxbsd'
+        shell: bash
+        run: strip bin/${{ matrix.bin }}
+
+      - name: Upload release artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ matrix.artifact }}
+          path: bin/${{ matrix.bin }}
+          if-no-files-found: error
+          retention-days: 14
+
+  publish:
+    name: 📦 Publish GitHub Release
+    needs: [validate, build]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      TAG: ${{ needs.validate.outputs.tag }}
+    steps:
+      - name: Download all release artifacts
+        uses: actions/download-artifact@v8
+        with:
+          pattern: release-*
+          path: dist
+          merge-multiple: true
+
+      - name: Restore executable bits
+        shell: bash
+        run: |
+          # Artifacts drop the executable bit, so restore it on Linux binaries.
+          chmod +x dist/godot.linuxbsd.* || true
+
+      - name: Write checksums
+        shell: bash
+        working-directory: dist
+        run: |
+          sha256sum godot.* > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
+      - name: Create or update GitHub Release
+        shell: bash
+        working-directory: dist
+        run: |
+          PRERELEASE_FLAG=""
+          if [[ "${TAG}" =~ (dev|alpha|beta|rc) ]]; then
+            PRERELEASE_FLAG="--prerelease"
+          fi
+
+          if gh release view "${TAG}" >/dev/null 2>&1; then
+            echo "Release ${TAG} exists, replacing its assets."
+            gh release upload "${TAG}" ./* --clobber
+          else
+            gh release create "${TAG}" ./* \
+              --verify-tag \
+              --title "Godot ${TAG}" \
+              --generate-notes \
+              ${PRERELEASE_FLAG}
+          fi
