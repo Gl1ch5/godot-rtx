@@ -1398,6 +1398,8 @@ public:
 
 	Error blas_build(RID p_blas);
 	Error tlas_build(RID p_tlas, Span<AccelerationStructureInstance> p_instances);
+	// False once the acceleration structure has been freed, including implicitly when one of its input buffers is freed.
+	bool acceleration_structure_is_valid(RID p_acceleration_structure) const;
 
 private:
 	/**********************************/

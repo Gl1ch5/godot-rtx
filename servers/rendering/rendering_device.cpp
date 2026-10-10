@@ -349,6 +349,10 @@ void RenderingDevice::_tlas_remove_blas_dependencies(AccelerationStructure *p_tl
 	p_tlas->acceleration_structure_dependencies.clear();
 }
 
+bool RenderingDevice::acceleration_structure_is_valid(RID p_acceleration_structure) const {
+	return acceleration_structure_owner.owns(p_acceleration_structure);
+}
+
 RID RenderingDevice::blas_create(Span<AccelerationStructureGeometry> p_geometries, BitField<AccelerationStructureFlagBits> p_flags) {
 	ERR_FAIL_COND_V_MSG(!has_feature(SUPPORTS_RAYTRACING_PIPELINE) && !has_feature(SUPPORTS_RAY_QUERY), RID(), "The current rendering device has neither raytracing pipeline nor ray query support.");
 

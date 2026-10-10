@@ -93,6 +93,9 @@ void RTScene::update(const PagedArray<RenderGeometryInstance *> &p_instances) {
 			as_instance.transform = geometry->transform;
 			as_instance.id = as_instances.size();
 			as_instance.blas = blas;
+			// Ray queries never read the hit shader binding table, but tlas_build rejects a zero range.
+			// Use a non-zero placeholder (one group at offset 0).
+			as_instance.hit_sbt_range = RenderingDevice::HitShaderBindingTableRange(1) << 32;
 			as_instances.push_back(as_instance);
 		}
 	}
@@ -110,14 +113,18 @@ RID RTScene::_get_or_create_blas(RID p_vertex_buffer, RID p_index_buffer, uint32
 	key.vertex_buffer = p_vertex_buffer;
 	key.index_buffer = p_index_buffer;
 
-	BLASEntry *entry = blas_cache.getptr(key);
-	if (entry) {
-		entry->last_used_frame = frame;
-		return entry->blas;
-	}
-
 	RenderingDevice *rd = RenderingDevice::get_singleton();
 	ERR_FAIL_NULL_V(rd, RID());
+
+	BLASEntry *entry = blas_cache.getptr(key);
+	if (entry) {
+		// The BLAS is freed implicitly when its vertex or index buffer is freed, so the entry may be stale.
+		if (rd->acceleration_structure_is_valid(entry->blas)) {
+			entry->last_used_frame = frame;
+			return entry->blas;
+		}
+		blas_cache.erase(key);
+	}
 
 	RenderingDevice::AccelerationStructureGeometry geometry;
 	geometry.flags = RenderingDevice::ACCELERATION_STRUCTURE_GEOMETRY_OPAQUE_BIT;
@@ -149,7 +156,7 @@ void RTScene::_ensure_tlas(uint32_t p_instance_count) {
 	instance_count = p_instance_count;
 
 	if (p_instance_count == 0) {
-		if (tlas.is_valid()) {
+		if (tlas.is_valid() && rd->acceleration_structure_is_valid(tlas)) {
 			rd->free_rid(tlas);
 			tlas = RID();
 			tlas_capacity = 0;
@@ -157,11 +164,11 @@ void RTScene::_ensure_tlas(uint32_t p_instance_count) {
 		return;
 	}
 
-	if (tlas.is_valid() && p_instance_count <= tlas_capacity) {
+	if (tlas.is_valid() && rd->acceleration_structure_is_valid(tlas) && p_instance_count <= tlas_capacity) {
 		return;
 	}
 
-	if (tlas.is_valid()) {
+	if (tlas.is_valid() && rd->acceleration_structure_is_valid(tlas)) {
 		rd->free_rid(tlas);
 	}
 
@@ -182,6 +189,8 @@ void RTScene::_cleanup_blas() {
 		}
 	}
 
+	if (stale_keys.size()) {
+		}
 	for (const BLASKey &key : stale_keys) {
 		rd->free_rid(blas_cache[key].blas);
 		blas_cache.erase(key);
@@ -194,12 +203,15 @@ void RTScene::finalize() {
 		return;
 	}
 
+	// Acceleration structures may already be gone if their buffers were freed first, so check before freeing.
 	for (const KeyValue<BLASKey, BLASEntry> &E : blas_cache) {
-		rd->free_rid(E.value.blas);
+		if (rd->acceleration_structure_is_valid(E.value.blas)) {
+			rd->free_rid(E.value.blas);
+		}
 	}
 	blas_cache.clear();
 
-	if (tlas.is_valid()) {
+	if (tlas.is_valid() && rd->acceleration_structure_is_valid(tlas)) {
 		rd->free_rid(tlas);
 	}
 	tlas = RID();
