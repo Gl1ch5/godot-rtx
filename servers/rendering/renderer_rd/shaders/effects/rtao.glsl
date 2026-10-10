@@ -72,7 +72,6 @@ void main() {
 		return;
 	}
 	normal_view = normalize(normal_view);
-	normal_view.z = -normal_view.z;
 	vec3 normal_world = normalize((params.view_to_world * vec4(normal_view, 0.0)).xyz);
 
 	const float radius = params.settings.x;

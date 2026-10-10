@@ -189,8 +189,6 @@ void RTScene::_cleanup_blas() {
 		}
 	}
 
-	if (stale_keys.size()) {
-		}
 	for (const BLASKey &key : stale_keys) {
 		rd->free_rid(blas_cache[key].blas);
 		blas_cache.erase(key);

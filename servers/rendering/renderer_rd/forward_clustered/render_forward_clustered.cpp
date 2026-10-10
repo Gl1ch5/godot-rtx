@@ -1475,7 +1475,11 @@ void RenderForwardClustered::_process_ssao(Ref<RenderSceneBuffersRD> p_render_bu
 		rt_settings.radius = settings.radius;
 		rt_settings.intensity = settings.intensity;
 		rt_settings.power = settings.power;
-		rt_ao.generate(p_render_buffers, 0, rt_scene.get_tlas(), p_normal_buffers[0], p_projections[0].inverse(), p_transform, rt_settings, rt_frame);
+		// The projection alone maps view space to clip space. Depth reconstruction needs world space, so include the camera transform.
+		Projection correction;
+		correction.set_depth_correction(true);
+		const Projection view_projection = (correction * p_projections[0]) * Projection(p_transform.affine_inverse());
+		rt_ao.generate(p_render_buffers, 0, rt_scene.get_tlas(), p_normal_buffers[0], view_projection.inverse(), p_transform, rt_settings, rt_frame);
 		rt_frame++;
 		return;
 	}
@@ -1544,6 +1548,23 @@ void RenderForwardClustered::_process_ssr(Ref<RenderSceneBuffersRD> p_render_buf
 		rb_data->ss_effects_data.ssr_last_frame_projections[v] = projection;
 	}
 	rb_data->ss_effects_data.ssr_last_frame_transform = p_transform;
+
+	// Ray traced reflections replace the screen-space pass when a TLAS is available. They write the same RB_FINAL target,
+	// which is always full internal size. Only single-view rendering is handled for now; multiview falls back to screen-space.
+	// World to clip for this frame, with the same depth correction the screen-space path uses. Stored in the same form for the next frame.
+	Projection rt_correction;
+	rt_correction.set_depth_correction(true);
+	const Projection rt_view_projection = (rt_correction * p_projections[0]) * Projection(p_transform.affine_inverse());
+	const Projection prev_view_projection = rt_last_view_projection;
+	rt_last_view_projection = rt_view_projection;
+	if (raytracing_enabled && rt_scene.get_instance_count() > 0 && p_render_buffers->get_view_count() == 1) {
+		if (!p_render_buffers->has_texture(RB_SCOPE_SSR, RB_FINAL)) {
+			p_render_buffers->create_texture(RB_SCOPE_SSR, RB_FINAL, RD::DATA_FORMAT_R16G16B16A16_SFLOAT, RD::TEXTURE_USAGE_SAMPLING_BIT | RD::TEXTURE_USAGE_STORAGE_BIT, RD::TEXTURE_SAMPLES_1, p_render_buffers->get_internal_size(), 1);
+		}
+		RendererRD::RTReflection::Settings rt_settings;
+		rt_reflection.generate(p_render_buffers, 0, rt_scene.get_tlas(), p_normal_slices[0], rt_view_projection.inverse(), prev_view_projection, p_transform, rt_settings);
+		return;
+	}
 
 	ss_effects->screen_space_reflection(p_render_buffers, rb_data->ss_effects_data.ssr, p_normal_slices, environment_get_ssr_max_steps(p_environment), environment_get_ssr_fade_in(p_environment), environment_get_ssr_fade_out(p_environment), environment_get_ssr_depth_tolerance(p_environment), p_projections, reprojections, p_eye_offsets, *copy_effects);
 }
@@ -5237,6 +5258,7 @@ RenderForwardClustered::RenderForwardClustered() {
 	raytracing_enabled = RendererRD::RTScene::is_supported();
 	if (raytracing_enabled) {
 		rt_ao.initialize();
+		rt_reflection.initialize();
 	}
 	singleton = this;
 
@@ -5402,6 +5424,7 @@ RenderForwardClustered::RenderForwardClustered() {
 RenderForwardClustered::~RenderForwardClustered() {
 	rt_scene.finalize();
 	rt_ao.finalize();
+	rt_reflection.finalize();
 
 	if (ss_effects != nullptr) {
 		memdelete(ss_effects);

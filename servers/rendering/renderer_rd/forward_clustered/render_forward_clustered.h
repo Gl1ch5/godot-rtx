@@ -39,6 +39,7 @@
 #include "servers/rendering/renderer_rd/effects/taa.h"
 #include "servers/rendering/renderer_rd/forward_clustered/scene_shader_forward_clustered.h"
 #include "servers/rendering/renderer_rd/raytracing/rt_ao.h"
+#include "servers/rendering/renderer_rd/raytracing/rt_reflection.h"
 #include "servers/rendering/renderer_rd/raytracing/rt_scene.h"
 #include "servers/rendering/renderer_rd/renderer_scene_render_rd.h"
 #include "servers/rendering/renderer_rd/shaders/forward_clustered/best_fit_normal.glsl.gen.h"
@@ -771,6 +772,8 @@ private:
 	bool raytracing_enabled = false;
 	RendererRD::RTScene rt_scene;
 	RendererRD::RTAO rt_ao;
+	RendererRD::RTReflection rt_reflection;
+	Projection rt_last_view_projection;
 	uint32_t rt_frame = 0;
 
 #ifdef METAL_MFXTEMPORAL_ENABLED
