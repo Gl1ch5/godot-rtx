@@ -40,6 +40,7 @@
 #include "servers/rendering/renderer_rd/forward_clustered/scene_shader_forward_clustered.h"
 #include "servers/rendering/renderer_rd/raytracing/rt_ao.h"
 #include "servers/rendering/renderer_rd/raytracing/rt_gi.h"
+#include "servers/rendering/renderer_rd/raytracing/rt_denoise.h"
 #include "servers/rendering/renderer_rd/raytracing/rt_shadow.h"
 #include "servers/rendering/renderer_rd/raytracing/rt_reflection.h"
 #include "servers/rendering/renderer_rd/raytracing/rt_scene.h"
@@ -777,6 +778,7 @@ private:
 	RendererRD::RTReflection rt_reflection;
 	RendererRD::RTGI rt_gi;
 	RendererRD::RTShadow rt_shadow;
+	RendererRD::RTDenoise rt_denoise;
 	Projection rt_gi_last_view_projection;
 	Projection rt_last_view_projection;
 	uint32_t rt_frame = 0;

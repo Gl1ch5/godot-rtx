@@ -1480,6 +1480,8 @@ void RenderForwardClustered::_process_ssao(Ref<RenderSceneBuffersRD> p_render_bu
 		correction.set_depth_correction(true);
 		const Projection view_projection = (correction * p_projections[0]) * Projection(p_transform.affine_inverse());
 		rt_ao.generate(p_render_buffers, 0, rt_scene.get_tlas(), p_normal_buffers[0], view_projection.inverse(), p_transform, rt_settings, rt_frame);
+		// One ray per pixel is noisy, so filter the result with the same depth and normal rules the scene uses.
+		rt_denoise.denoise(p_render_buffers->get_texture_slice(RB_SCOPE_SSAO, RB_FINAL, 0, 0), p_render_buffers->get_depth_texture(0), p_normal_buffers[0], view_projection.inverse(), p_transform.origin, 2);
 		rt_frame++;
 		return;
 	}
@@ -1621,6 +1623,7 @@ void RenderForwardClustered::_process_sscs(Ref<RenderSceneBuffersRD> p_render_bu
 			float tan_radius = Math::tan(Math::deg_to_rad(light_size * 0.5f));
 			RID visibility = p_render_buffers->get_texture_slice(RB_SCOPE_SSCS, RB_SSCS, i, 0);
 			rt_shadow.generate(visibility, rt_scene.get_tlas(), p_normal_roughness_slices[0], p_render_buffers->get_depth_texture(0), inv_view_projection, p_transform, light_transform.basis.get_column(2), tan_radius, rt_frame);
+			rt_denoise.denoise(visibility, p_render_buffers->get_depth_texture(0), p_normal_roughness_slices[0], inv_view_projection, p_transform.origin, 3);
 			continue;
 		}
 
@@ -5295,6 +5298,7 @@ RenderForwardClustered::RenderForwardClustered() {
 		rt_ao.initialize();
 		rt_reflection.initialize();
 		rt_shadow.initialize();
+		rt_denoise.initialize();
 		rt_gi.initialize();
 	}
 	singleton = this;
@@ -5463,6 +5467,7 @@ RenderForwardClustered::~RenderForwardClustered() {
 	rt_ao.finalize();
 	rt_reflection.finalize();
 	rt_shadow.finalize();
+	rt_denoise.finalize();
 	rt_gi.finalize();
 
 	if (ss_effects != nullptr) {
