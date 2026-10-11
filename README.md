@@ -28,9 +28,8 @@ setting off, the engine uses its normal screen-space effects.
 ### Status
 
 - The upstream CI workflows cover Linux, Windows, macOS, Android, iOS, Web and visionOS.
-  The style check passes on the fork. The `Linux / Editor w/ Mono` job fails in the godot-cpp
-  archive step (`Argument list too long`). That job is not part of the ray tracing changes, and
-  the branch has no default-branch CI runs to compare against, so the failure is not yet resolved.
+  The style check and the `Linux / Editor w/ Mono` job pass on the fork, including the godot-cpp
+  build (which needed its archive step staged at a short path to avoid `Argument list too long`).
 - Checked locally on Mesa lavapipe (software Vulkan) with the Khronos validation layer: the ray traced
   shaders compile and pass validation. Mesa's log reports `OpTypeRayQueryKHR is not supported yet`, so the
   ray query paths were not executed there and no rendered output has been checked.
