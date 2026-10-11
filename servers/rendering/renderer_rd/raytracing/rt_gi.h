@@ -75,6 +75,8 @@ private:
 	RID linear_sampler;
 	// Ping-pong history of accumulated irradiance. The alpha channel stores the number of accumulated samples.
 	RID history[2];
+	// Ping-pong view depth of the surface stored in each history texel. Used to reject history across disocclusions.
+	RID depth_history[2];
 	uint32_t history_index = 0;
 	Size2i history_size;
 	bool initialized = false;

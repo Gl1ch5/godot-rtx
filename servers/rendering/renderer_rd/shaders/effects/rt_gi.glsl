@@ -20,6 +20,8 @@ layout(rgba16f, set = 0, binding = 3) uniform restrict writeonly image2D dest_gi
 layout(set = 0, binding = 4) uniform accelerationStructureEXT scene_tlas;
 layout(set = 0, binding = 6) uniform sampler2D history_color; // Linear sampler. rgb = accumulated irradiance, a = sample count.
 layout(rgba16f, set = 0, binding = 7) uniform restrict writeonly image2D history_out;
+layout(set = 0, binding = 8) uniform sampler2D history_depth; // Nearest sampler. r = view depth of the surface when it was last shaded.
+layout(r32f, set = 0, binding = 9) uniform restrict writeonly image2D history_depth_out;
 
 layout(set = 0, binding = 5, std140) uniform Params {
 	mat4 inv_view_projection;
@@ -66,6 +68,7 @@ void main() {
 	float depth = textureLod(source_depth, uv, 0.0).r;
 	if (depth <= 0.0 || depth >= 1.0) {
 		imageStore(dest_gi, pos, vec4(0.0));
+		imageStore(history_depth_out, pos, vec4(0.0));
 		return;
 	}
 
@@ -77,6 +80,7 @@ void main() {
 	vec3 normal_view = imageLoad(source_normal_roughness, normal_pos).xyz * 2.0 - 1.0;
 	if (dot(normal_view, normal_view) < 0.5) {
 		imageStore(dest_gi, pos, vec4(0.0));
+		imageStore(history_depth_out, pos, vec4(0.0));
 		return;
 	}
 	normal_view = normalize(normal_view);
@@ -121,12 +125,18 @@ void main() {
 	// Samples are counted in the history alpha, so the weight drops as the history gets longer.
 	float history_count = 0.0;
 	vec3 accumulated = irradiance;
+	// Disocclusion: the view depth of this surface is compared with the depth stored for the history texel. A surface
+	// that was hidden last frame stores a different depth there, so its history is rejected.
+	// Both values are distances along the camera's forward axis, and prev_clip.w is that distance in last frame's view.
+	float view_depth = dot(world_pos - params.view_to_world[3].xyz, -params.view_to_world[2].xyz);
 	vec4 prev_clip = params.prev_view_projection * vec4(world_pos, 1.0);
 	if (prev_clip.w > 0.0) {
 		vec2 history_uv = (prev_clip.xy / prev_clip.w) * 0.5 + 0.5;
 		if (all(greaterThanEqual(history_uv, vec2(0.0))) && all(lessThanEqual(history_uv, vec2(1.0)))) {
 			vec4 history = textureLod(history_color, history_uv, 0.0);
-			if (history.a > 0.0) {
+			float stored_depth = textureLod(history_depth, history_uv, 0.0).r;
+			bool same_surface = abs(stored_depth - prev_clip.w) <= 0.05 * prev_clip.w;
+			if (history.a > 0.0 && same_surface) {
 				history_count = min(history.a, float(params.frame_data.z) - 1.0);
 				accumulated = mix(history.rgb, irradiance, 1.0 / (history_count + 1.0));
 				history_count += 1.0;
@@ -138,5 +148,6 @@ void main() {
 	}
 
 	imageStore(history_out, pos, vec4(accumulated, history_count));
+	imageStore(history_depth_out, pos, vec4(view_depth));
 	imageStore(dest_gi, pos, vec4(accumulated, 0.0));
 }

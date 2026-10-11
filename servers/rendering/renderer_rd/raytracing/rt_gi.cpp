@@ -55,6 +55,12 @@ void RendererRD::RTGI::finalize() {
 		}
 		rid = RID();
 	}
+	for (RID &rid : depth_history) {
+		if (rid.is_valid()) {
+			RD::get_singleton()->free_rid(rid);
+		}
+		rid = RID();
+	}
 	history_size = Size2i();
 	history_index = 0;
 	pipeline.free();
@@ -84,6 +90,11 @@ void RendererRD::RTGI::generate(Ref<RenderSceneBuffersRD> p_render_buffers, uint
 				RD::get_singleton()->free_rid(rid);
 			}
 		}
+		for (RID &rid : depth_history) {
+			if (rid.is_valid()) {
+				RD::get_singleton()->free_rid(rid);
+			}
+		}
 		history_size = Size2i(gi_format.width, gi_format.height);
 		RD::TextureFormat history_format;
 		history_format.format = RD::DATA_FORMAT_R16G16B16A16_SFLOAT;
@@ -94,9 +105,15 @@ void RendererRD::RTGI::generate(Ref<RenderSceneBuffersRD> p_render_buffers, uint
 		history_format.mipmaps = 1;
 		history_format.texture_type = RD::TEXTURE_TYPE_2D;
 		history_format.usage_bits = RD::TEXTURE_USAGE_SAMPLING_BIT | RD::TEXTURE_USAGE_STORAGE_BIT | RD::TEXTURE_USAGE_CAN_COPY_TO_BIT;
+		RD::TextureFormat depth_history_format = history_format;
+		depth_history_format.format = RD::DATA_FORMAT_R32_SFLOAT;
 		RD::TextureView view;
 		for (RID &rid : history) {
 			rid = RD::get_singleton()->texture_create(history_format, view);
+			RD::get_singleton()->texture_clear(rid, Color(0, 0, 0, 0), 0, 1, 0, 1);
+		}
+		for (RID &rid : depth_history) {
+			rid = RD::get_singleton()->texture_create(depth_history_format, view);
 			RD::get_singleton()->texture_clear(rid, Color(0, 0, 0, 0), 0, 1, 0, 1);
 		}
 		history_index = 0;
@@ -173,6 +190,17 @@ void RendererRD::RTGI::generate(Ref<RenderSceneBuffersRD> p_render_buffers, uint
 	u_history_out.binding = 7;
 	u_history_out.append_id(history_cur);
 
+	RD::Uniform u_depth_history;
+	u_depth_history.uniform_type = RD::UNIFORM_TYPE_SAMPLER_WITH_TEXTURE;
+	u_depth_history.binding = 8;
+	u_depth_history.append_id(nearest_sampler);
+	u_depth_history.append_id(depth_history[history_index]);
+
+	RD::Uniform u_depth_history_out;
+	u_depth_history_out.uniform_type = RD::UNIFORM_TYPE_IMAGE;
+	u_depth_history_out.binding = 9;
+	u_depth_history_out.append_id(depth_history[1 - history_index]);
+
 	Vector<RD::Uniform> uniforms;
 	uniforms.push_back(u_depth);
 	uniforms.push_back(u_normal);
@@ -182,6 +210,8 @@ void RendererRD::RTGI::generate(Ref<RenderSceneBuffersRD> p_render_buffers, uint
 	uniforms.push_back(u_params);
 	uniforms.push_back(u_history);
 	uniforms.push_back(u_history_out);
+	uniforms.push_back(u_depth_history);
+	uniforms.push_back(u_depth_history_out);
 	RID uniform_set = RD::get_singleton()->uniform_set_create(uniforms, shader.version_get_shader(shader_version, 0), 0);
 
 	RD::ComputeListID compute_list = RD::get_singleton()->compute_list_begin();
