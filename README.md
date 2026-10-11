@@ -6,6 +6,46 @@
   </a>
 </p>
 
+## RTX fork: hardware ray tracing (4.8-dev)
+
+This fork adds hardware ray traced effects to the Forward+ renderer. They replace
+the screen-space versions when enabled:
+
+- **Reflections** (replace SSR)
+- **Global illumination** (replace SSIL), with temporal accumulation and a spatial denoiser
+- **Shadows** for directional, omni and spot lights (contact shadows are traced against the TLAS)
+- **Ambient occlusion** (ray traced, denoised)
+
+It remains a rasterization renderer with ray tracing added on top.
+
+### Enabling it
+
+Set **Project Settings > Rendering > Ray Tracing > Enabled** (`rendering/ray_tracing/enabled`)
+to `true` and restart the project. The renderer needs a Vulkan device with
+`VK_KHR_ray_query` and `VK_KHR_buffer_device_address`. Without them, or with the
+setting off, the engine uses its normal screen-space effects.
+
+### Status
+
+- The upstream CI workflows cover Linux, Windows, macOS, Android, iOS, Web and visionOS. The
+  latest fork commits are not yet confirmed green on GitHub; the style-check fix is pending.
+- Checked locally on Mesa lavapipe (software Vulkan) with the Khronos validation layer:
+  no validation errors for the ray traced paths.
+- **Not yet verified on NVIDIA RTX or AMD RDNA2+ hardware.** Known gaps: skinned meshes
+  are not in the acceleration structure, multiview renders without the ray traced shadow layer (shadow maps only),
+  and GI has no disocclusion rejection.
+
+### Building
+
+```sh
+scons platform=linuxbsd target=editor dev_mode=no module_text_server_fb_enabled=yes accesskit=no -j8
+```
+
+### Releases
+
+The `release.yml` workflow runs on `v*` tags and on manual dispatch with an existing tag.
+Publishing creates a public GitHub release, so only dispatch it for a tag you intend to publish.
+
 ## 2D and 3D cross-platform game engine
 
 **[Godot Engine](https://godotengine.org) is a feature-packed, cross-platform

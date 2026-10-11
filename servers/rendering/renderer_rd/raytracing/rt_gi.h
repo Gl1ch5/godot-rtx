@@ -1,5 +1,5 @@
 /**************************************************************************/
-/*  rt_gi.h                                                                */
+/*  rt_gi.h                                                               */
 /**************************************************************************/
 /*                         This file is part of:                          */
 /*                             GODOT ENGINE                               */
@@ -27,11 +27,12 @@
 /* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE      */
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
 /**************************************************************************/
+
 #pragma once
 
 #include "core/math/projection.h"
-#include "core/math/vector2i.h"
 #include "core/math/transform_3d.h"
+#include "core/math/vector2i.h"
 #include "servers/rendering/renderer_rd/pipeline_deferred_rd.h"
 #include "servers/rendering/renderer_rd/shader_rd.h"
 #include "servers/rendering/renderer_rd/shaders/effects/rt_gi.glsl.gen.h"

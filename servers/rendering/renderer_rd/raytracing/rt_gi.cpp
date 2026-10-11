@@ -1,5 +1,5 @@
 /**************************************************************************/
-/*  rt_gi.cpp                                                              */
+/*  rt_gi.cpp                                                             */
 /**************************************************************************/
 /*                         This file is part of:                          */
 /*                             GODOT ENGINE                               */
@@ -27,6 +27,7 @@
 /* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE      */
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
 /**************************************************************************/
+
 #include "rt_gi.h"
 
 #include "servers/rendering/renderer_rd/effects/ss_effects.h"
