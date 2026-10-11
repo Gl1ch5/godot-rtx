@@ -33,8 +33,16 @@ runs:
       shell: sh
       run: ${{ inputs.bin }} --headless --dump-gdextension-interface --dump-extension-api
 
+    # The archive step passes every object path to sh as one string, and Linux caps that string at 128 KiB.
+    # Building from a short path keeps the command under the cap when the workspace path is long.
+    - name: Stage godot-cpp at a short path
+      shell: sh
+      run: |
+        rm -rf /tmp/godot-cpp
+        cp -a godot-cpp /tmp/godot-cpp
+
     - name: SCons Build
       shell: sh
       env:
         SCONS_CACHE: ${{ inputs.scons-cache }}
-      run: scons --directory=./godot-cpp/test "gdextension_dir=${{ github.workspace }}" ${{ inputs.scons-flags }}
+      run: scons --directory=/tmp/godot-cpp/test "gdextension_dir=${{ github.workspace }}" ${{ inputs.scons-flags }}
