@@ -36,7 +36,8 @@ namespace RendererRD {
 
 bool RTScene::is_supported() {
 	RenderingDevice *rd = RenderingDevice::get_singleton();
-	return rd && rd->has_feature(RenderingDevice::SUPPORTS_RAY_QUERY) && GLOBAL_GET("rendering/ray_tracing/enabled");
+	// Ray queries need buffer device addresses to build and read acceleration structures.
+	return rd && rd->has_feature(RenderingDevice::SUPPORTS_RAY_QUERY) && rd->has_feature(RenderingDevice::SUPPORTS_BUFFER_DEVICE_ADDRESS) && GLOBAL_GET("rendering/ray_tracing/enabled");
 }
 
 void RTScene::update(const PagedArray<RenderGeometryInstance *> &p_instances) {
