@@ -20,7 +20,8 @@ struct LightData { //this structure needs to be as packed as possible
 
 	float specular_amount;
 	float shadow_opacity;
-	float pad[2];
+	uint sscs_index; // contact shadow buffer layer, 0xFFFFFFFF when unused
+	uint pad;
 
 	vec4 atlas_rect; // rect in the shadow atlas
 	mat4 shadow_matrix;

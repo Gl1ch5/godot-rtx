@@ -31,7 +31,6 @@
 #include "light_storage.h"
 
 #include "core/config/project_settings.h"
-#include "servers/rendering/renderer_rd/raytracing/rt_scene.h"
 #include "core/math/geometry_3d.h"
 #include "core/os/os.h"
 #include "servers/rendering/renderer_rd/renderer_scene_render_rd.h"
@@ -740,7 +739,6 @@ void LightStorage::update_light_buffers(RenderDataRD *p_render_data, const Paged
 	omni_light_count = 0;
 	spot_light_count = 0;
 	area_light_count = 0;
-	uint32_t directional_contact_shadows_count = 0;
 
 	r_directional_light_soft_shadows = false;
 
@@ -799,10 +797,8 @@ void LightStorage::update_light_buffers(RenderDataRD *p_render_data, const Paged
 				light_data.shadow_opacity = (p_using_shadows && light->shadow)
 						? light->param[RSE::LIGHT_PARAM_SHADOW_OPACITY]
 						: 0.0;
-				// Ray traced shadows write into the same buffer, so lights without contact shadows still need a slot when ray tracing is supported.
-				light_data.sscs_index = (light->shadow && (light->allow_contact_shadows || RTScene::is_supported()))
-						? directional_contact_shadows_count++
-						: 0xffffffff;
+				// The layer comes from the contact shadow list built by the renderer, so the shader and the buffer always agree.
+				light_data.sscs_index = light_instance->sscs_layer;
 
 				float angular_diameter = light->param[RSE::LIGHT_PARAM_SIZE];
 				if (angular_diameter > 0.0) {
@@ -1256,6 +1252,8 @@ void LightStorage::update_light_buffers(RenderDataRD *p_render_data, const Paged
 		} else {
 			light_data.shadow_opacity = 0.0;
 		}
+
+		light_data.sscs_index = light_instance->sscs_layer;
 
 		light_instance->cull_mask = light->cull_mask;
 

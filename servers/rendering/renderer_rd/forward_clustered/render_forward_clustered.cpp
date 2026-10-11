@@ -1588,6 +1588,9 @@ void RenderForwardClustered::_process_ssr(Ref<RenderSceneBuffersRD> p_render_buf
 	ss_effects->screen_space_reflection(p_render_buffers, rb_data->ss_effects_data.ssr, p_normal_slices, environment_get_ssr_max_steps(p_environment), environment_get_ssr_fade_in(p_environment), environment_get_ssr_fade_out(p_environment), environment_get_ssr_depth_tolerance(p_environment), p_projections, reprojections, p_eye_offsets, *copy_effects);
 }
 
+// Each ray traced positional light costs a full screen trace and two denoise passes, so only a few get one.
+static const uint32_t RT_MAX_POSITIONAL_SHADOWS = 4;
+
 void RenderForwardClustered::_process_sscs(Ref<RenderSceneBuffersRD> p_render_buffers, const RID *p_normal_roughness_slices, const Projection *p_projections, const Transform3D &p_transform, const LocalVector<int> &p_contact_shadows, const RenderShadowData *p_render_shadows, const float p_taa_frame_count) {
 	ERR_FAIL_NULL(ss_effects);
 	ERR_FAIL_COND(p_render_buffers.is_null());
@@ -1616,19 +1619,26 @@ void RenderForwardClustered::_process_sscs(Ref<RenderSceneBuffersRD> p_render_bu
 		RID light_instance = p_render_shadows[p_contact_shadows[i]].light;
 		RID base = light_storage->light_instance_get_base_light(light_instance);
 		Transform3D light_transform = light_storage->light_instance_get_base_transform(light_instance);
+		const bool is_directional = light_storage->light_get_type(base) == RSE::LIGHT_DIRECTIONAL;
 
 		if (use_rt) {
-			// Ray traced shadow. Angular size is stored as a diameter in degrees, so the tangent of the radius gives the cone.
-			float light_size = light_storage->light_get_param(base, RSE::LIGHT_PARAM_SIZE);
-			float tan_radius = Math::tan(Math::deg_to_rad(light_size * 0.5f));
 			RID visibility = p_render_buffers->get_texture_slice(RB_SCOPE_SSCS, RB_SSCS, i, 0);
-			rt_shadow.generate(visibility, rt_scene.get_tlas(), p_normal_roughness_slices[0], p_render_buffers->get_depth_texture(0), inv_view_projection, p_transform, light_transform.basis.get_column(2), tan_radius, rt_frame);
+			if (is_directional) {
+				// Angular size is stored as a diameter in degrees, so the tangent of the radius gives the cone.
+				float light_size = light_storage->light_get_param(base, RSE::LIGHT_PARAM_SIZE);
+				float tan_radius = Math::tan(Math::deg_to_rad(light_size * 0.5f));
+				rt_shadow.generate(visibility, rt_scene.get_tlas(), p_normal_roughness_slices[0], p_render_buffers->get_depth_texture(0), inv_view_projection, p_transform, light_transform.basis.get_column(2), tan_radius, rt_frame);
+			} else {
+				// Positional lights use their size as a sphere radius in world units.
+				float light_radius = light_storage->light_get_param(base, RSE::LIGHT_PARAM_SIZE);
+				rt_shadow.generate_point(visibility, rt_scene.get_tlas(), p_normal_roughness_slices[0], p_render_buffers->get_depth_texture(0), inv_view_projection, p_transform, light_transform.origin, light_radius, rt_frame);
+			}
 			rt_denoise.denoise(visibility, p_render_buffers->get_depth_texture(0), p_normal_roughness_slices[0], inv_view_projection, p_transform.origin, 3);
 			continue;
 		}
 
-		if (!light_storage->light_get_allow_contact_shadows(base)) {
-			// Ray traced lights without a usable RT path leave the shadow map as the only shadow, so the buffer is cleared to fully lit.
+		if (!is_directional || !light_storage->light_get_allow_contact_shadows(base)) {
+			// Without a usable RT path the shadow map stays the only shadow. Positional lights never use screen space contact shadows, so their layer is cleared too.
 			RID visibility = p_render_buffers->get_texture_slice(RB_SCOPE_SSCS, RB_SSCS, i, 0);
 			RD::get_singleton()->texture_clear(visibility, Color(1.0, 1.0, 1.0, 1.0), 0, 1, 0, 1);
 			continue;
@@ -1680,8 +1690,14 @@ void RenderForwardClustered::_pre_opaque_render(RenderDataRD *p_render_data, boo
 	p_render_data->directional_shadows.clear();
 	p_render_data->contact_shadows.clear();
 
+	// Every light starts without a contact shadow layer. Only lights in the list built below get one.
+	for (uint32_t i = 0; i < p_render_data->lights->size(); i++) {
+		light_storage->light_instance_set_sscs_layer((*p_render_data->lights)[i], 0xFFFFFFFF);
+	}
+
 	float lod_distance_multiplier = p_render_data->scene_data->cam_projection.get_lod_multiplier();
 	{
+		uint32_t rt_positional_count = 0;
 		for (int i = 0; i < p_render_data->render_shadow_count; i++) {
 			RID li = p_render_data->render_shadows[i].light;
 			RID base = light_storage->light_instance_get_base_light(li);
@@ -1697,11 +1713,25 @@ void RenderForwardClustered::_pre_opaque_render(RenderDataRD *p_render_data, boo
 					}
 				}
 
-			} else if (light_storage->light_get_type(base) == RSE::LIGHT_OMNI && light_storage->light_omni_get_shadow_mode(base) == RSE::LIGHT_OMNI_SHADOW_CUBE) {
-				p_render_data->cube_shadows.push_back(i);
 			} else {
-				p_render_data->shadows.push_back(i);
+				if (light_storage->light_get_type(base) == RSE::LIGHT_OMNI && light_storage->light_omni_get_shadow_mode(base) == RSE::LIGHT_OMNI_SHADOW_CUBE) {
+					p_render_data->cube_shadows.push_back(i);
+				} else {
+					p_render_data->shadows.push_back(i);
+				}
+
+				// Ray traced positional shadows share the contact shadow buffer. Each one is a full screen trace, so the count is capped.
+				if (rb_data.is_valid() && ss_effects && raytracing_enabled && p_render_data->render_shadows[i].pass == 0 && rt_positional_count < RT_MAX_POSITIONAL_SHADOWS) {
+					p_render_data->contact_shadows.push_back(i);
+					rt_positional_count++;
+				}
 			}
+		}
+
+		// The layer is the position in the contact shadow list, which is also the layer the pass writes to.
+		for (uint32_t c = 0; c < p_render_data->contact_shadows.size(); c++) {
+			RID li = p_render_data->render_shadows[p_render_data->contact_shadows[c]].light;
+			light_storage->light_instance_set_sscs_layer(li, c);
 		}
 
 		if (p_render_data->cube_shadows.size()) {

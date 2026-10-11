@@ -626,6 +626,11 @@ void light_process_omni(uint idx, vec3 vertex, hvec3 eye_vec, hvec3 normal, vec3
 			shadow = mix(half(1.0), sample_omni_pcf_shadow(shadow_atlas, omni_lights.data[idx].soft_shadow_scale / shadow_sample.z, pos, uv_rect, flip_offset, depth, taa_frame_count), half(omni_lights.data[idx].shadow_opacity));
 		}
 	}
+#ifdef SCENE_SSCS_LIGHTS_AVAILABLE
+	if (omni_lights.data[idx].sscs_index != 0xFFFFFFFFu) {
+		shadow = min(shadow, half(sscs_light_visibility(omni_lights.data[idx].sscs_index, screen_uv)));
+	}
+#endif
 #endif
 
 	vec3 color = omni_lights.data[idx].color;
@@ -880,6 +885,11 @@ void light_process_spot(uint idx, vec3 vertex, hvec3 eye_vec, hvec3 normal, vec3
 			shadow = mix(half(1.0), sample_pcf_shadow(shadow_atlas, spot_lights.data[idx].soft_shadow_scale * scene_data_block.data.shadow_atlas_pixel_size, shadow_uv, taa_frame_count), half(spot_lights.data[idx].shadow_opacity));
 		}
 	}
+#ifdef SCENE_SSCS_LIGHTS_AVAILABLE
+	if (spot_lights.data[idx].sscs_index != 0xFFFFFFFFu) {
+		shadow = min(shadow, half(sscs_light_visibility(spot_lights.data[idx].sscs_index, screen_uv)));
+	}
+#endif
 #endif // SHADOWS_DISABLED
 
 	vec3 color = spot_lights.data[idx].color;

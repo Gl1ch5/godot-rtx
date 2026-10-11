@@ -123,6 +123,8 @@ private:
 		uint64_t last_pass = 0;
 		uint32_t cull_mask = 0;
 		uint32_t light_directional_index = 0;
+		// Layer in the contact shadow buffer for this frame, or 0xFFFFFFFF when the light has no screen space visibility.
+		uint32_t sscs_layer = 0xFFFFFFFF;
 
 		Rect2 directional_rect;
 
@@ -155,7 +157,8 @@ private:
 		float specular_amount;
 		float shadow_opacity;
 
-		float pad[2];
+		uint32_t sscs_index;
+		uint32_t pad;
 		float atlas_rect[4]; // in omni, used for atlas uv, in spot, used for projector uv
 		float shadow_matrix[16];
 		float shadow_bias;
@@ -669,6 +672,13 @@ public:
 	_FORCE_INLINE_ Transform3D light_instance_get_base_transform(RID p_light_instance) {
 		LightInstance *li = light_instance_owner.get_or_null(p_light_instance);
 		return li->transform;
+	}
+
+	_FORCE_INLINE_ void light_instance_set_sscs_layer(RID p_light_instance, uint32_t p_layer) {
+		LightInstance *li = light_instance_owner.get_or_null(p_light_instance);
+		if (li) {
+			li->sscs_layer = p_layer;
+		}
 	}
 
 	_FORCE_INLINE_ AABB light_instance_get_base_aabb(RID p_light_instance) {

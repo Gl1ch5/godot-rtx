@@ -492,6 +492,16 @@ layout(set = 1, binding = 36) uniform texture2D ssr_mip_level_buffer;
 layout(set = 1, binding = 37) uniform texture2DArray sscs_buffer;
 #endif // USE_MULTIVIEW
 
+// Omni and spot lights read ray traced visibility from the contact shadow buffer. Multiview has no ray traced path yet.
+#define SCENE_SSCS_LIGHTS_AVAILABLE
+float sscs_light_visibility(uint p_layer, vec2 p_screen_uv) {
+#ifdef USE_MULTIVIEW
+	return 1.0;
+#else
+	return textureLod(sampler2DArray(sscs_buffer, SAMPLER_LINEAR_CLAMP), vec3(p_screen_uv, float(p_layer)), 0.0).r;
+#endif
+}
+
 #endif
 
 vec4 normal_roughness_compatibility(vec4 p_normal_roughness) {

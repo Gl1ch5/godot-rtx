@@ -54,6 +54,45 @@ void RendererRD::RTShadow::finalize() {
 }
 
 void RendererRD::RTShadow::generate(RID p_visibility_slice, RID p_tlas, RID p_normal_buffer, RID p_depth_texture, const Projection &p_inv_view_projection, const Transform3D &p_cam_transform, Vector3 p_light_direction, float p_tan_angular_radius, uint32_t p_frame) {
+	Params params;
+	Projection inv_vp = p_inv_view_projection;
+	memcpy(params.inv_view_projection, &inv_vp.columns[0][0], sizeof(float) * 16);
+	Projection world_mat = Projection(p_cam_transform);
+	memcpy(params.view_to_world, &world_mat.columns[0][0], sizeof(float) * 16);
+	Vector3 light_dir = p_light_direction.normalized();
+	params.light_direction[0] = light_dir.x;
+	params.light_direction[1] = light_dir.y;
+	params.light_direction[2] = light_dir.z;
+	params.light_direction[3] = p_tan_angular_radius;
+	memset(params.light_position, 0, sizeof(params.light_position));
+	params.frame_data[0] = p_frame;
+	params.frame_data[1] = 0;
+	params.frame_data[2] = 0;
+	params.frame_data[3] = 0;
+
+	_dispatch(p_visibility_slice, p_tlas, p_normal_buffer, p_depth_texture, params);
+}
+
+void RendererRD::RTShadow::generate_point(RID p_visibility_slice, RID p_tlas, RID p_normal_buffer, RID p_depth_texture, const Projection &p_inv_view_projection, const Transform3D &p_cam_transform, Vector3 p_light_position, float p_light_radius, uint32_t p_frame) {
+	Params params;
+	Projection inv_vp = p_inv_view_projection;
+	memcpy(params.inv_view_projection, &inv_vp.columns[0][0], sizeof(float) * 16);
+	Projection world_mat = Projection(p_cam_transform);
+	memcpy(params.view_to_world, &world_mat.columns[0][0], sizeof(float) * 16);
+	memset(params.light_direction, 0, sizeof(params.light_direction));
+	params.light_position[0] = p_light_position.x;
+	params.light_position[1] = p_light_position.y;
+	params.light_position[2] = p_light_position.z;
+	params.light_position[3] = MAX(p_light_radius, 0.0f);
+	params.frame_data[0] = p_frame;
+	params.frame_data[1] = 1;
+	params.frame_data[2] = 0;
+	params.frame_data[3] = 0;
+
+	_dispatch(p_visibility_slice, p_tlas, p_normal_buffer, p_depth_texture, params);
+}
+
+void RendererRD::RTShadow::_dispatch(RID p_visibility_slice, RID p_tlas, RID p_normal_buffer, RID p_depth_texture, Params &p_params) {
 	ERR_FAIL_COND(!initialized);
 	ERR_FAIL_COND(p_visibility_slice.is_null());
 	ERR_FAIL_COND(p_tlas.is_null());
@@ -70,21 +109,7 @@ void RendererRD::RTShadow::generate(RID p_visibility_slice, RID p_tlas, RID p_no
 		nearest_sampler = material_storage->sampler_rd_get_default(RSE::CANVAS_ITEM_TEXTURE_FILTER_NEAREST, RSE::CANVAS_ITEM_TEXTURE_REPEAT_DISABLED);
 	}
 
-	Params params;
-	Projection inv_vp = p_inv_view_projection;
-	memcpy(params.inv_view_projection, &inv_vp.columns[0][0], sizeof(float) * 16);
-	Projection world_mat = Projection(p_cam_transform);
-	memcpy(params.view_to_world, &world_mat.columns[0][0], sizeof(float) * 16);
-	Vector3 light_dir = p_light_direction.normalized();
-	params.light_direction[0] = light_dir.x;
-	params.light_direction[1] = light_dir.y;
-	params.light_direction[2] = light_dir.z;
-	params.light_direction[3] = p_tan_angular_radius;
-	params.frame_data[0] = p_frame;
-	params.frame_data[1] = 0;
-	params.frame_data[2] = 0;
-	params.frame_data[3] = 0;
-	RD::get_singleton()->buffer_update(params_buffer, 0, sizeof(Params), &params);
+	RD::get_singleton()->buffer_update(params_buffer, 0, sizeof(Params), &p_params);
 
 	RD::Uniform u_depth;
 	u_depth.uniform_type = RD::UNIFORM_TYPE_SAMPLER_WITH_TEXTURE;

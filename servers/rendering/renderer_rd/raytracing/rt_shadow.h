@@ -46,14 +46,19 @@ public:
 
 	// p_visibility_slice is a single-layer R8 storage texture. p_light_direction points toward the light.
 	void generate(RID p_visibility_slice, RID p_tlas, RID p_normal_buffer, RID p_depth_texture, const Projection &p_inv_view_projection, const Transform3D &p_cam_transform, Vector3 p_light_direction, float p_tan_angular_radius, uint32_t p_frame);
+	// Point lights are traced toward a sphere of p_light_radius around p_light_position.
+	void generate_point(RID p_visibility_slice, RID p_tlas, RID p_normal_buffer, RID p_depth_texture, const Projection &p_inv_view_projection, const Transform3D &p_cam_transform, Vector3 p_light_position, float p_light_radius, uint32_t p_frame);
 
 private:
 	struct Params {
 		float inv_view_projection[16];
 		float view_to_world[16];
 		float light_direction[4];
+		float light_position[4];
 		uint32_t frame_data[4];
 	};
+
+	void _dispatch(RID p_visibility_slice, RID p_tlas, RID p_normal_buffer, RID p_depth_texture, Params &p_params);
 
 	RtShadowShaderRD shader;
 	RID shader_version;
